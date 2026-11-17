@@ -1,17 +1,33 @@
--- Quais estados e regiões concentram as maiores despesas e quais apresentam os melhores indicadores de desconto?
+-- P1 - Qual é o percentual e o valor financeiro nominal economizado pelo governo (diferença entre valor estimado e valor homologado)?
 
 SELECT
-      CASE
-        WHEN GROUPING(l.regiao) = 1 THEN 'TOTAL GERAL'
-        WHEN GROUPING(l.uf_sigla) = 1 THEN 'TOTAL REGIAO'
-       ELSE 'ESTADO'
-    END AS nivel_analise,
+    ROUND(SUM(valor_total_estimado), 2) AS valor_estimado,
+    ROUND(SUM(valor_total_homologado), 2) AS valor_homologado,
+    ROUND(
+        SUM(valor_total_estimado) -
+        SUM(valor_total_homologado), 2
+    ) AS economia_nominal,
+    ROUND(
+        100 * (
+            SUM(valor_total_estimado) -
+            SUM(valor_total_homologado)
+        ) / NULLIF(SUM(valor_total_estimado), 0),
+        2
+    ) AS economia_percentual
+FROM fato_item_contratado
+WHERE comparavel = 1;
 
-     COALESCE(l.regiao, 'TODAS') AS regiao,
-     COALESCE(l.uf_sigla, 'TODOS') AS estado,
+-- P2 - Quem são os maiores fornecedores em volume financeiro e qual percentual do orçamento público está concentrado neles?
 
-    ROUND(SUM(f.valor_total_homologado), 2)
-        AS despesa_total,
+SELECT
+    fo.ni_fornecedor,
+    fo.nome_fornecedor,
+
+    COUNT(DISTINCT f.numero_controle_pncp) AS qtd_contratacoes,
+
+    ROUND(
+        SUM(f.valor_total_homologado), 2
+    ) AS volume_financeiro,
 
     ROUND(
         100 * SUM(f.valor_total_homologado) /
@@ -20,235 +36,196 @@ SELECT
              FROM fato_item_contratado
              WHERE comparavel = 1), 0
         ), 2
-    ) AS percentual_despesa,
-
-    ROUND(
-        100 * SUM(f.economia_valor) /
-        NULLIF(SUM(f.valor_total_estimado), 0), 2
-    ) AS percentual_economia
+    ) AS percentual_orcamento
 
 FROM fato_item_contratado f
 
-INNER JOIN dim_localidade l
-    ON f.sk_localidade = l.sk_localidade
+INNER JOIN dim_fornecedor fo
+    ON f.sk_fornecedor = fo.sk_fornecedor
 
 WHERE f.comparavel = 1
 
-GROUP BY l.regiao, l.uf_sigla WITH ROLLUP
+GROUP BY
+    fo.ni_fornecedor,
+    fo.nome_fornecedor
 
-ORDER BY
-    GROUPING(l.regiao),
-    l.regiao,
-    GROUPING(l.uf_sigla),
-    despesa_total DESC;
+ORDER BY volume_financeiro DESC
 
--- Quais modalidades licitatórias trazem maior deságio/economia e quais concentram o maior volume de recursos?
+LIMIT 10;
+
+-- P3 - Quais modalidades licitatórias trazem maior deságio/economia e quais concentram o maior volume de recursos?
 
 SELECT
     m.nome_modalidade,
 
-    COUNT(DISTINCT f.numero_controle_pncp)
-        AS quantidade_contratacoes,
-
-    COUNT(*) AS quantidade_itens,
+    COUNT(DISTINCT f.numero_controle_pncp) AS qtd_contratacoes,
 
     ROUND(
-        SUM(CASE
-            WHEN f.comparavel = 1
-            THEN f.economia_valor
-            ELSE 0
-        END), 2
+        SUM(f.valor_total_estimado), 2
+    ) AS valor_estimado,
+
+    ROUND(
+        SUM(f.valor_total_homologado), 2
+    ) AS valor_homologado,
+
+    ROUND(
+        SUM(f.economia_valor), 2
     ) AS economia_nominal,
 
     ROUND(
-        100 * SUM(CASE
-            WHEN f.comparavel = 1
-            THEN f.economia_valor
-            ELSE 0
-        END) /
-        NULLIF(
-            SUM(CASE
-                WHEN f.comparavel = 1
-                THEN f.valor_total_estimado
-                ELSE 0
-            END), 0
-        ), 2
-    ) AS economia_percentual,
-
-    ROUND(SUM(f.valor_total_homologado), 2)
-        AS volume_homologado,
+        100 * SUM(f.economia_valor) /
+        NULLIF(SUM(f.valor_total_estimado), 0), 2
+    ) AS percentual_economia,
 
     ROUND(
         100 * SUM(f.valor_total_homologado) /
         NULLIF(
             (SELECT SUM(valor_total_homologado)
-             FROM fato_item_contratado), 0
+             FROM fato_item_contratado
+             WHERE comparavel = 1), 0
         ), 2
-    ) AS percentual_volume
+    ) AS percentual_recursos
 
 FROM fato_item_contratado f
 
 INNER JOIN dim_modalidade m
     ON f.sk_modalidade = m.sk_modalidade
 
+WHERE f.comparavel = 1
+
 GROUP BY m.nome_modalidade
 
-ORDER BY volume_homologado DESC;
+ORDER BY valor_homologado DESC;
 
+-- P4 - Qual a duração média (em dias) entre o lançamento do edital e a sua homologação final, segmentada por órgão?
 
--- Qual a duração média (em dias) entre o lançamento do edital e a sua homologação final, segmentada por órgão?
-
-SELECT
-    resultado.cnpj_orgao,
-    resultado.nome_orgao,
-    COUNT(*) AS quantidade_contratacoes,
-    ROUND(AVG(resultado.dias_homologacao), 1)
-        AS media_dias_homologacao
-
-FROM (
+WITH processos AS (
     SELECT
         f.numero_controle_pncp,
         o.cnpj_orgao,
-        o.nome_orgao,
+        MAX(o.nome_orgao) AS nome_orgao,
+        MIN(f.data_publicacao) AS data_publicacao,
+        MAX(f.data_homologacao) AS data_homologacao
+    FROM fato_item_contratado f
+    INNER JOIN dim_orgao o
+        ON f.sk_orgao = o.sk_orgao
+    WHERE f.data_publicacao IS NOT NULL
+      AND f.data_homologacao IS NOT NULL
+    GROUP BY
+        f.numero_controle_pncp,
+        o.cnpj_orgao
+)
+SELECT
+    cnpj_orgao,
+    nome_orgao,
+    COUNT(*) AS qtd_processos,
+    ROUND(
+        AVG(DATEDIFF(data_homologacao, data_publicacao)), 2
+    ) AS media_dias_homologacao
+FROM processos
+WHERE data_homologacao >= data_publicacao
+GROUP BY
+    cnpj_orgao,
+    nome_orgao
+ORDER BY media_dias_homologacao DESC;
 
-        DATEDIFF(
-            MAX(f.data_homologacao),
-            MIN(f.data_publicacao)
-        ) AS dias_homologacao
+-- P5 - Quais estados e regiões concentram as maiores despesas e quais apresentam os melhores indicadores de desconto?
+
+WITH analise AS (
+
+    -- ANÁLISE POR REGIÃO
+    SELECT
+        'REGIÃO' AS nivel,
+        l.regiao AS localidade,
+
+        COUNT(DISTINCT f.numero_controle_pncp) AS qtd_processos,
+
+        SUM(f.valor_total_estimado) AS valor_estimado,
+
+        SUM(f.valor_total_homologado) AS despesa_homologada,
+
+        SUM(f.valor_total_estimado) -
+        SUM(f.valor_total_homologado) AS economia_nominal
 
     FROM fato_item_contratado f
 
-    INNER JOIN dim_orgao o
-        ON f.sk_orgao = o.sk_orgao
+    INNER JOIN dim_localidade l
+        ON f.sk_localidade = l.sk_localidade
 
-    WHERE f.data_publicacao IS NOT NULL
-      AND f.data_homologacao IS NOT NULL
+    WHERE f.comparavel = 1
 
-    GROUP BY
-        f.numero_controle_pncp,
-        o.cnpj_orgao,
-        o.nome_orgao
+    GROUP BY l.regiao
 
-    HAVING MAX(f.data_homologacao) >= MIN(f.data_publicacao)
+    UNION ALL
 
-) AS resultado
+    -- ANÁLISE POR ESTADO
+    SELECT
+        'ESTADO' AS nivel,
+        l.uf_sigla AS localidade,
 
-GROUP BY
-    resultado.cnpj_orgao,
-    resultado.nome_orgao
+        COUNT(DISTINCT f.numero_controle_pncp) AS qtd_processos,
 
-HAVING COUNT(*) >= 5
+        SUM(f.valor_total_estimado) AS valor_estimado,
 
-ORDER BY media_dias_homologacao DESC;
+        SUM(f.valor_total_homologado) AS despesa_homologada,
 
--- Quais estados e regiões concentram as maiores despesas e quais apresentam os melhores indicadores de desconto?
+        SUM(f.valor_total_estimado) -
+        SUM(f.valor_total_homologado) AS economia_nominal
 
-SELECT
-    'ESTADO' AS nivel,
-    l.regiao,
-    l.uf_sigla AS uf,
+    FROM fato_item_contratado f
 
-    ROUND(SUM(f.valor_total_homologado), 2) AS despesas_homologadas,
+    INNER JOIN dim_localidade l
+        ON f.sk_localidade = l.sk_localidade
 
-    ROUND(
-        100 * SUM(f.valor_total_homologado) /
-        (SELECT SUM(valor_total_homologado)
-         FROM fato_item_contratado
-         WHERE comparavel = 1),
-        2
-    ) AS participacao_despesas_pct,
+    WHERE f.comparavel = 1
 
-    ROUND(
-        100 * SUM(f.economia_valor) /
-        NULLIF(SUM(f.valor_total_estimado), 0),
-        2
-    ) AS economia_percentual,
-
-    ROUND(SUM(f.economia_valor), 2) AS economia_nominal,
-
-    COUNT(*) AS quantidade_itens
-
-FROM fato_item_contratado f
-INNER JOIN dim_localidade l
-    ON f.sk_localidade = l.sk_localidade
-
-WHERE f.comparavel = 1
-
-GROUP BY l.regiao, l.uf_sigla
-
-UNION ALL
+    GROUP BY l.uf_sigla
+)
 
 SELECT
-    'REGIAO' AS nivel,
-    l.regiao,
-    'TODOS' AS uf,
+    nivel,
+    localidade,
+    qtd_processos,
 
-    ROUND(SUM(f.valor_total_homologado), 2),
+    ROUND(valor_estimado, 2) AS valor_estimado,
 
-    ROUND(
-        100 * SUM(f.valor_total_homologado) /
-        (SELECT SUM(valor_total_homologado)
-         FROM fato_item_contratado
-         WHERE comparavel = 1),
-        2
-    ),
+    ROUND(despesa_homologada, 2) AS despesa_homologada,
+
+    ROUND(economia_nominal, 2) AS economia_nominal,
 
     ROUND(
-        100 * SUM(f.economia_valor) /
-        NULLIF(SUM(f.valor_total_estimado), 0),
+        100 * despesa_homologada /
+        NULLIF(SUM(
+            CASE
+                WHEN nivel = analise.nivel
+                THEN despesa_homologada
+            END
+        ) OVER (PARTITION BY nivel), 0),
         2
-    ),
-
-    ROUND(SUM(f.economia_valor), 2),
-
-    COUNT(*)
-
-FROM fato_item_contratado f
-INNER JOIN dim_localidade l
-    ON f.sk_localidade = l.sk_localidade
-
-WHERE f.comparavel = 1
-
-GROUP BY l.regiao
-
-UNION ALL
-
-SELECT
-    'TOTAL' AS nivel,
-    'TODAS' AS regiao,
-    'TODOS' AS uf,
-
-    ROUND(SUM(valor_total_homologado), 2),
-    100.00,
+    ) AS participacao_despesa_pct,
 
     ROUND(
-        100 * SUM(economia_valor) /
-        NULLIF(SUM(valor_total_estimado), 0),
+        100 * economia_nominal /
+        NULLIF(valor_estimado, 0),
         2
-    ),
+    ) AS economia_pct
 
-    ROUND(SUM(economia_valor), 2),
-
-    COUNT(*)
-
-FROM fato_item_contratado
-
-WHERE comparavel = 1
+FROM analise
 
 ORDER BY
-    FIELD(nivel, 'REGIAO', 'ESTADO', 'TOTAL'),
-    despesas_homologadas DESC;
+    nivel,
+    despesa_homologada DESC;
 
--- Como os recursos se distribuem entre bens, serviços e obras e engenharia?
+
+-- P6 - Como os recursos se distribuem entre bens, serviços e obras e engenharia?
 
 SELECT
-    perfil_gasto,
+    perfil_gasto AS tipo_gasto,
 
-    COUNT(*) AS quantidade_itens,
+    COUNT(*) AS qtd_itens,
 
-    ROUND(
-        SUM(valor_total_homologado), 2
-    ) AS valor_homologado,
+    ROUND(SUM(valor_total_homologado), 2)
+        AS valor_homologado,
 
     ROUND(
         100 * SUM(valor_total_homologado) /

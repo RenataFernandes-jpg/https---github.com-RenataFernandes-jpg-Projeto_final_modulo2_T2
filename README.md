@@ -19,19 +19,11 @@ P5 - Quais estados e regiões concentram as maiores despesas e quais apresentam 
 
 P6 - Como os recursos se distribuem entre bens, serviços e obras e engenharia?
 
-#### Diagnóstico da origem:
+#### Diagrama estrela:
 
-|Diagnóstico    |Valor|
-| ---: | ---: |
-|Grafias distintas de categoria (no MySQL)   |   18|
-|Grafias distintas de nome de loja           |   50|
-|Grafias distintas de HouveDesconto          |   12|
-|Grafias distintas de CanalPedido            |    8|
-|Pedidos sem Cod Loja preenchido             | 1575|
-|Pedidos sem nome de loja (vao para a -1)    |    3|
-
-Para fazer o tratamento da base criei uma tabela limpa_pedido onde foram colocado varios Update para tratar os dados.
-O nome da loja foram tratados com a função REPLACE E CASE, as colunas HouveDesconto e CanalPedido foram tratados através das tabelas dim_desconto e dim_canal com update e join na tabela limpa_pedido.
+  <div>
+    <img width="726" height="504" alt="Captura de tela 2026-11-17 010250" src="https://github.com/user-attachments/assets/65797809-a708-45a1-954b-0fa24c6faea6" />
+  </div>
 
 
 
@@ -91,8 +83,28 @@ A maior parte dos recursos públicos está concentrada em Obras e Engenharia, qu
     <img width="846" height="599" alt="Distribuição dos recursos por tipo de gasto" src="https://github.com/user-attachments/assets/d9e6ba82-1637-435d-8421-82d1d407559b" />
   </div>
 
-#### Diagrama estrela:
+#### POWER BI
 
   <div>
-    <img width="801" height="489" alt="Image" src="https://github.com/user-attachments/assets/f50d42a3-3864-4ed4-8746-410294f12070" />
+    <img width="789" height="449" alt="p1" src="https://github.com/user-attachments/assets/f6cce639-9f2d-4f3d-ab42-5213c01fdab1" />
+  </div>
+
+  <div>
+    <img width="785" height="449" alt="P2" src="https://github.com/user-attachments/assets/2b2ec981-93d5-46e2-9c18-2054c9e25a17" />
+  </div>
+
+  <div>
+    <img width="784" height="448" alt="P3" src="https://github.com/user-attachments/assets/0d7f6f92-9760-414a-aedb-6cca75b08a24" />
+  </div>
+
+  <div>
+    <img width="781" height="448" alt="P4" src="https://github.com/user-attachments/assets/a2194560-6d76-47e6-a3d9-b1f28249420d" />
+  </div>
+
+  <div>
+    <img width="788" height="449" alt="P5" src="https://github.com/user-attachments/assets/9e4ec56f-27da-4cce-a64f-d151932a593e" />>
+  </div>
+
+  <div>
+    <img width="779" height="450" alt="P6" src="https://github.com/user-attachments/assets/5d928fa1-adcb-492c-9f66-39191fa97282" />
   </div>
